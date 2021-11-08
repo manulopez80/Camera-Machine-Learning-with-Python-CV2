@@ -2,28 +2,28 @@ import numpy as np
 import cv2
 from playsound import playsound
 
-cascada_cara = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-#cascada_ojos = cv2.CascadeClassifier('haarcascade_eye.xml')
+face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+#eyes_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
 
-def pintar_cara(imagen):
-    imagen1 = imagen.copy()
-    rectangulos1 = cascada_cara.detectMultiScale(imagen)
-    #rectangulos2 = cascada_ojos.detectMultiScale(imagen)
+def paint_face(image):
+    image1 = image.copy()
+    rectangles1 = face_cascade.detectMultiScale(image)
+    #rectangles2 = eyes_cascade.detectMultiScale(image)
 
-    for (x,y,w,h) in rectangulos1:
-    #for (x,y,w,h) in rectangulos2:
-        cv2.rectangle(imagen1, (x,y), (x+w,y+h), (0,0,255), 2)
+    for (x,y,w,h) in rectangles1:
+    #for (x,y,w,h) in rectangles2:
+        cv2.rectangle(image1, (x,y), (x+w,y+h), (0,0,255), 2)
         #if w>0 
             #playsound('alarma.mp3')
-    return imagen1
+    return image1
 
 captura = cv2.VideoCapture(0)
 
 while True:
     res, video = captura.read(0)
     if res:
-        video = pintar_cara(video)
-        cv2.imshow('Prueba de Manu para detectar caras', video)
+        video = paint_face(video)
+        cv2.imshow('Manu test to detect faces', video)
         tecla = cv2.waitKey(1)
         if tecla==27:
             break
