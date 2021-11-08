@@ -2,185 +2,184 @@ import numpy as np
 import cv2
 from sklearn.metrics import pairwise
 
-# variable global para el fondo
+# backgroung global variable
 bg = None
 
 #-------------------------------------------------------------
-# Calcula la media ponderada, la acumula y actualiza el fondo
+# Media weight calculation & accumulation. Background update
 #-------------------------------------------------------------
-def run_avg(image, media_ponderada):
+def run_avg(image, media_weight):
     global bg
 
-    # inicializa el fondo la primera vez
+    # Initialize background first time
     if bg is None:
         bg = image.copy().astype("float")
         return
 
-    # si ya existe algún fondo, actualiza la media ponderada del fondo
-    cv2.accumulateWeighted(image, bg, media_ponderada)
+    # if background exists, update media weight background
+    cv2.accumulateWeighted(image, bg, media_weight)
 
 
-# -----------------------------------------------
-# Separación de la region de la mano en la imagen
-# -----------------------------------------------
+# ----------------------------
+# Hand region image distance 
+# ----------------------------
 def segment(image, threshold=25):
     global bg
 
-    # Encontramos la diferencia absoluta entre el fondo y el frame actual
+    # Absolute differente between background and current frame
     diff = cv2.absdiff(bg.astype("uint8"), image)
 
-    # Obtenemos el threshold a partir de la diferencia anterior
+    # Get threshold through difference before
     thresholded = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)[1]
 
-    # obtenemos los contornos en la imagen de umbral
-    # findContours recibe una imagen binaria
-    # RETR_EXTERNAL es el modo de obtención del contorno
-    # CHAIN_APPROX_SIMPLE es el método de aproximación de los contornos
+    # Get contours in the image dawn
+    # findContours gets a binary image
+    # RETR_EXTERNAL = contours getting mode
+    # CHAIN_APPROX_SIMPLE = contours closeness mode
     contours, _ = cv2.findContours(thresholded.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Si no se detectan contornos no hacemos nada
+    # If no contours do nothing
     if len(contours) == 0:
         return
     else:
-        # Obtenemos el maximo contorno de la mano y devolvemos tanto el contorno
-        # como el threshold
+        # Get maximum hand contour and return contour and threshold
         segmented = max(contours, key=cv2.contourArea)
         return (thresholded, segmented)
 
 
 
 #--------------------------------------------------------------
-# Cuenta el numero de dedos en la region de la mano segmentada
+# Count fingers number in segmented hand region
 #--------------------------------------------------------------
 def count(thresholded, segmented):
     
-    # encontramos la envolvente convexa de la region segmentada
+    # find convex covering of segmented region
     env_convex = cv2.convexHull(segmented)
 
-    # buscamos los puntos extremos de la envolvente
+    # find end covering points
     extreme_top    = tuple(env_convex[env_convex[:, :, 1].argmin()][0])
     extreme_bottom = tuple(env_convex[env_convex[:, :, 1].argmax()][0])
     extreme_left   = tuple(env_convex[env_convex[:, :, 0].argmin()][0])
     extreme_right  = tuple(env_convex[env_convex[:, :, 0].argmax()][0])
 
-    # obtenemos el centro de la palma
+    # get hand palm center
     cX = int((extreme_left[0] + extreme_right[0]) / 2)
     cY = int((extreme_top[1] + extreme_bottom[1]) / 2)
 
-    # calculamos la maxima distancia Euclídea entre el centro de la palma
-    # y los puntos más extremos de la envolvente
+    # calculate maximum euclidean distance between hand palm center 
+    # and the end covering points 
     distance = pairwise.euclidean_distances([(cX, cY)], Y=[extreme_left, extreme_right, extreme_top, extreme_bottom])[0]
     maximum_distance = distance[distance.argmax()]
 
-    # generamos el radio del circulo al 80% de la máxima distancia Euclídea obtenida
+    # generate circle ratio at 80% maximum euclidean distance
     radius = int(0.8 * maximum_distance)
 
-    # generamos la circunferencia del circulo
+    # circle circumference
     circumference = (2 * np.pi * radius)
 
-    # dubujamos la imagen circular que tiene la palma y los dedos
+    # draw circle image for hand palm and fingers
     circular_roi = np.zeros(thresholded.shape[:2], dtype="uint8")
     cv2.circle(circular_roi, (cX, cY), radius, 255, 1)
 
-    # Hacemos el bit-wise AND con el threshold de la mano utilizando la imagen circular
-    # como máscara, la cual genera los cortes de los dedos
+    # bit-wise AND for hand threshold using circle image like mask, that 
+    # generate hands cutting
     circular_roi = cv2.bitwise_and(thresholded, thresholded, mask=circular_roi)
 
-    # Encontramos los contornos en la imagen circular resultante
+    # find resultant circle image contours
     contours, _ = cv2.findContours(circular_roi.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    # Contador de dedos
-    contador_dedos = 0
+    # finger counter
+    finger_counter = 0
 
     # loop through the contours found
     for c in contours:
-        # Obtenemos los valores del contorno 
+        # get contour values
         (x, y, w, h) = cv2.boundingRect(c)
 
-        # Incrementamos el contador de dedos solo si:
-        # 1. La region de contorno no es la muñeca
-        # 2. El numero de puntos a lo largo del contorno no excede
-        #    del 25% de la imagen circular 
+        # Increment finger contour only if:
+        # 1. contour region is not the wrist
+        # 2. Points contour number does is not bigger than 
+        #    25% of the circle image 
         if ((cY + (cY * 0.25)) > (y + h)) and ((circumference * 0.25) > c.shape[0]):
-            contador_dedos += 1
+            finger_counter += 1
 
-    return contador_dedos
+    return finger_counter
 
 
 #-------------------
-# FUNCION PRINCIPAL
+# MAIN
 #-------------------
 if __name__ == "__main__":
 
-    # Inicializar peso para media ponderada
-    media_ponderada = 0.5
+    # Initialize media weight
+    media_weight = 0.5
 
-    # Se obtiene la referencia a la webcam
+    # Reference to cam
     camera = cv2.VideoCapture(0)
 
-    # Coordenadas del recuadro de captura
+    # Capture coordinates
     top, right, bottom, left = 10, 350, 225, 590
 
-    # inicializamos el numero de frames
+    # frames number
     num_frames = 0
 
     while True:
-        # obtenemos el frame actual
+        # get current frame
         res, frame = camera.read()
 
-        # rotamos el frame para que no se vea como un espejo
+        # rotate the frame to avoid mirron effect
         frame = cv2.flip(frame, 1) #0 vertical, 1 horizontal
 
-        # obtenemos la altura y el ancho del frame
+        # get height and width frame
         # height, width = frame.shape[:2]
 
-        # obtenemos una copia del frame del tamaño del recuadro, la convertimos
-        # a escala de grises y la difuminamos (desenfoque gaussiano) para
-        # que sea más sencillo después separar el fondo
+        # get frame rectangle copy, convert it to grayscale 
+        # and blur it (gauss soft focus) to split the background
+        # more easy
         sub_frame = frame[top:bottom, right:left]
         sub_frame = cv2.cvtColor(sub_frame, cv2.COLOR_BGR2GRAY)
         sub_frame = cv2.GaussianBlur(sub_frame, (7, 7), 0)
 
-        # Para separar el fondo, acumulamos frames hasta un umbral (30)
-        # para obtener su media ponderada y ser calibrado cuando supere el umbral
-        # (es importante que no haya ningun movimiento en la camara durante este primer paso)
+        # To split background, accumulate frames until dawn (30)
+        # to get media weight and to be calibrated when dawn is exceeded
+        # (important: not camera movement during this step)
         if num_frames < 30:
-            run_avg(sub_frame, media_ponderada)
+            run_avg(sub_frame, media_weight)
             if num_frames == 1:
                 print("[STATUS] please wait! calibrating...")
             elif num_frames == 29:
                 print("[STATUS] calibration successfull...")
         else:
-            # separamos la region de la mano del frame completo en una tupla
+            # separate hand region from complete frame in a tuple
             hand = segment(sub_frame)
             if hand is not None:
-                # separamos la tupla en dos variables
+                # separate tuple in two variables
                 thresholded, segmented = hand
 
-                # Dibujamos los contornos en el frame completo y 
-                # mostramos en otra ventana el threshold
+                # draw contours in complete frame and 
+                # show the threshold in other window
                 cv2.drawContours(frame, [segmented + (right, top)], -1, (0, 0, 255))
 
-                # Contamos el numero de dedos y lo escribimos en pantalla
-                num_dedos = count(thresholded, segmented)
+                # count fingers number and send it to screen
+                num_finger = count(thresholded, segmented)
 
-                cv2.putText(frame, str(num_dedos), (70, 45), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,0), 2)
+                cv2.putText(frame, str(num_finger), (70, 45), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,0), 2)
                 cv2.imshow("Thresholded", thresholded)
 
-        # dibujamos el rectangulo en verde en el frame actual
+        # draw rectangle in green in curren frame
         cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
 
-        # incrementamos el numero de frames
+        # increase frames number
         num_frames += 1
 
-        # Mostramos el frame completo con el rectangulo
+        # Show complete frame in rectangle
         cv2.imshow("Video", frame)
 
-        # Si la tecla pulsada es la 'q' salimos del bucle
+        # Press 'q' to and loop
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
-# liberamos memoria de recursos
+# free memory and resources
 camera.release()
 cv2.destroyAllWindows()
 
